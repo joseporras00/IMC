@@ -24,9 +24,10 @@ using namespace util;
 // ------------------------------
 // Constructor: Default values for all the parameters
 MultilayerPerceptron::MultilayerPerceptron():
-	nOfLayers(0),
-	layers(0),
-	//etc
+	this->dEta = 0.1;
+	this->dMu = 0.9;
+	this->bSesgo = false;
+	this->nNumCapas = 3;
 {
 
 }
@@ -80,10 +81,11 @@ void MultilayerPerceptron::freeMemory() {
 			layers[i].neurons[j].w.clear;
 			layers[i].neurons[j].deltaWts.clear;
 			layers[i].neurons[j].lastDeltaW.clear;
-			layers[i].neurons[j].wCopy.clear;		
-			
+			layers[i].neurons[j].wCopy.clear;
 		}
+		layers[i].neurons.clear;
 	}
+	layers.clear;
 }
 
 // ------------------------------
@@ -102,58 +104,126 @@ void MultilayerPerceptron::randomWeights() {
 // ------------------------------
 // Feed the input neurons of the network with a vector passed as an argument
 void MultilayerPerceptron::feedInputs(double* input) {
-
+	for(int j=0; layers[0].nOfNeurons; j++)
+		this->layers[0].neurons[j].x = input[j];
 }
 
 // ------------------------------
 // Get the outputs predicted by the network (out vector the output layer) and save them in the vector passed as an argument
 void MultilayerPerceptron::getOutputs(double* output)
 {
-
+	for(int j=0; j<this->layers[this->nOfLayers-1].nOfNeurons; j++)
+		output[j] = this->layers[this->nOfLayers-1].neurons[j].x;
 }
 
 // ------------------------------
 // Make a copy of all the weights (copy w in wCopy)
 void MultilayerPerceptron::copyWeights() {
-
+	for(int h=0; h<this->nOfLayers; h++)
+		for(int j=0; j<this->layers[h].nOfNeurons; j++)
+			this->layers[h].neurons[j].wCopy= this->layers[h].neurons[j].w;
 }
 
 // ------------------------------
 // Restore a copy of all the weights (copy wCopy in w)
 void MultilayerPerceptron::restoreWeights() {
+	for(int h=0; h<this->nOfLayers; h++)
+		for(int j=0; j<this->layers[h].nOfNeurons; j++)
+			this->layers[h].neurons[j].w = this->layers[h].neurons[j].wCopy;
 
 }
 
 // ------------------------------
 // Calculate and propagate the outputs of the neurons, from the first layer until the last one -->-->
 void MultilayerPerceptron::forwardPropagate() {
-	
+	double out = 0.0;
+
+	for(int h=1; h<this->nOfLayers; h++) {
+		for(int j=0; j<this->layers[h].nOfNeurons; j++) {
+			// Se realiza el sumatorio para cada neurona de la capa anterior
+			for(int i=0; i<this->layers[h-1].nOfNeurons; i++)
+				out -= this->layers[h].neurons[j].w[i] * this->layers[h-1].neurons[i].x;
+
+			// Se incluye el sesgo en la función sigmoide si está activo
+			if (this->bSesgo)
+				out -= this->layers[h].neurons[j].w[this->layers[h-1].neurons];
+
+			// Se realiza la función sigmoide
+			this->layers[h].neurons[j].x = 1 / (1 + exp(salida));
+
+			// Se reinicializa el valor de la variable salida
+			out = 0.0;
+		}
+	}
 }
 
 // ------------------------------
 // Obtain the output error (MSE) of the out vector of the output layer wrt a target vector and return it
 double MultilayerPerceptron::obtainError(double* target) {
-	return -1;
+	double error = 0.0;
+
+	// Se calcula el error con cada una de las salidas
+	for(int j=0; j<this->layers[this->nofLayers-1].nOfNeurons; j++)
+		error += pow(target[j] - this->layers[this->nOfLayers-1].neurons[j].x,2);
+
+	// Se ha de dividir dicho error calculado entre el número de neuronas de salida
+	return error / this->layers[this->nOfLayers-1].nOfNeurons;
 }
 
 
 // ------------------------------
 // Backpropagate the output error wrt a vector passed as an argument, from the last layer to the first one <--<--
 void MultilayerPerceptron::backpropagateError(double* target) {
-	
+	for(int j=0; j<this->layers[this->nOfLayers-1].nOfNeurons; j++)
+		this->layers[this->nOfLayers-1].nOfNeurons[j].dX = -(target[j] - this->layers[this->nOfLayers-1].neurons[j].x) * this->layers[this->nOfLayers-1].neurons[j].x * (1 - this->layers[this->nOfLayers-1].neurons[j].x);
+
+	// Contiene el sumatorio calculado para cada una de las neuronas
+	double sum = 0.0;
+
+	// Se retropaga el error por las diferentes capas
+	for(int h=this->nOfLayers-2; h>0; h--) {
+		for(int j=0; j<this->layers[h].nOfNeurons; j++) {
+			for(int i=0; i<this->layers[h+1].nOfNeurons; i++)
+				sum += this->layers[h+1].neurons[i].w[j] * this->layers[h+1].neurons[i].dX;
+
+			this->layers[h].neurons[j].dX = sum * this->layers[h].neurons[j].x * (1 - this->layers[h].neurons[j].x);
+			sum = 0.0;
+		}
+	}
 }
 
 
 // ------------------------------
 // Accumulate the changes produced by one pattern and save them in deltaW
 void MultilayerPerceptron::accumulateChange() {
+	for(int h=1; h<this->nOfLayers; h++) {
+		for(int j=0; j<this->layers[h].nOfNeurons; j++) {
+			for(int i=0; i<this->layers[h-1].nOfNeurons; i++)
+				this->layers[h].neurons[j].deltaW[i] += this->layers[h].neurons[j].dX * this->layers[h-1].neurons[i].x;
 
+			if (this->bSesgo)
+				// La última posición del vector deltaW contiene el sesgo, si es que existe
+				this->layers[h].neurons[j].deltaW[this->layers[h-1].neurons] += this->layers[h].neurons[j].dX;
+		}
+	}
 }
 
 // ------------------------------
 // Update the network weights, from the first layer to the last one
 void MultilayerPerceptron::weightAdjustment() {
+	for(int h=1; h<this->nOfLayers; h++) {
+		for(int j=0; j<this->layers[h].nOfNeurons; j++) {
+			for(int i=0; i<this->layers[h-1].nOfNeurons; i++) {
+				this->layers[h].neurons[j].w[i] += -(this->dEta * this->layers[h].neurons[j].deltaW[i]) - (this->dMu * (this->dEta * this->layers[h].neurons[j].lastDeltaW[i]));
+				this->layers[h].neurons[j].lastDeltaW[i] = this->layers[h].neurons[j].deltaW[i];
+			}
 
+			if (this->bSesgo) {
+				this->layers[h].neurons[j].w[this->layers[h-1].nOfNeurons] += -(this->dEta * this->layers[h].neurons[j].deltaW[this->layers[h-1].nOfNeurons]) - (this->dMu * (this->dEta * this->layers[h].neurons[j].lastDeltaW[this->layers[h-1].nOfNeurons]));
+				this->layers[h].neurons[j].lasteltaW[this->layers[h-1].nOfNeurons] = this->layers[h].neurons[j].deltaW[this->layers[h-1].nOfNeurons];
+			}
+		}
+	}
 
 }
 
@@ -178,15 +248,84 @@ void MultilayerPerceptron::printNetwork() {
 // Perform an epoch: forward propagate the inputs, backpropagate the error and adjust the weights
 // input is the input vector of the pattern and target is the desired output vector of the pattern
 void MultilayerPerceptron::performEpochOnline(double* input, double* target) {
+	for(int h=1; h<this->nOfLayers; h++) {
+		for(int j=0; j<this->layers[h].nOfNeurons; j++) {
+			for(int i=0; i<this->layers[h-1].nOfNeurons; i++)
+				this->layers[h].neurons[j].deltaW[i] = 0.0;
 
+			if (this->bSesgo)
+				this->layers[h].neurons[j].deltaW[this->layers[h-1].neurons] = 0.0;
+		}
+	}
+
+	// Se realizan los diferentes pasos para la simulación de la red neuronal
+	alimentarEntradas(entrada);
+	propagarEntradas();
+	retropropagarError(objetivo);
+	acumularCambio();
+	ajustarPesos();
 }
 
 // ------------------------------
 // Read a dataset from a file name and return it
 Dataset* MultilayerPerceptron::readData(const char *fileName) {
 
+	ifstream myFile(fileName);    // Create an input stream
 
-	return NULL;
+    if (!myFile.is_open()) {
+       cout << "ERROR: I cannot open the file " << fileName << endl;
+       return NULL;
+    }
+
+	Dataset * dataset = new Dataset;
+	if(dataset==NULL)
+		return NULL;
+
+	string line;
+	int i,j;
+
+
+	if( myFile.good()) {
+		getline(myFile,line);   // Read a line
+		istringstream iss(line);
+		iss >> dataset->nOfInputs;
+		iss >> dataset->nOfOutputs;
+		iss >> dataset->nOfPatterns;
+	}
+	dataset->inputs = new double*[dataset->nOfPatterns];
+	dataset->outputs = new double*[dataset->nOfPatterns];
+
+	for(i=0; i<dataset->nOfPatterns; i++){
+		dataset->inputs[i] = new double[dataset->nOfInputs];
+		dataset->outputs[i] = new double[dataset->nOfOutputs];
+	}
+
+	i=0;
+	while ( myFile.good()) {
+		getline(myFile,line);   // Read a line
+		if (! line.empty()) {
+			istringstream iss(line);
+			for(j=0; j< dataset->nOfInputs; j++){
+				double value;
+				iss >> value;
+				if(!iss)
+					return NULL;
+				dataset->inputs[i][j] = value;
+			}
+			for(j=0; j< dataset->nOfOutputs; j++){
+				double value;
+				iss >> value;
+				if(!iss)
+					return NULL;
+				dataset->outputs[i][j] = value;
+			}
+			i++;
+		}
+	}
+
+	myFile.close();
+
+	return dataset;
 }
 
 // ------------------------------
@@ -201,7 +340,15 @@ void MultilayerPerceptron::trainOnline(Dataset* trainDataset) {
 // ------------------------------
 // Test the network with a dataset and return the MSE
 double MultilayerPerceptron::test(Dataset* testDataset) {
-	return -1.0;
+	double error = 0;
+	for(int i=0; i<testDataset->nOfPatrons; i++) {
+		// Cargamos las entradas y propagamos el valor
+		alimentarEntradas(testDataset->entradas[i]);
+		propagarEntradas();
+		error += calcularErrorSalida(pDatosTest->salidas[i]);
+	}
+	error /= testDataset->nOfPatrons;
+	return error;
 }
 
 
@@ -342,67 +489,6 @@ bool MultilayerPerceptron::saveWeights(const char * archivo)
 
 }
 
-// ------------------------------
-// Read a dataset from a file name and return it
-Dataset* MultilayerPerceptron::readData(const char *fileName) {
-
-	ifstream myFile(fileName);    // Create an input stream
-
-    if (!myFile.is_open()) {
-       cout << "ERROR: I cannot open the file " << fileName << endl;
-       return NULL;
-    }
-
-	Dataset * dataset = new Dataset;
-	if(dataset==NULL)
-		return NULL;
-
-	string line;
-	int i,j;
-
-
-	if( myFile.good()) {
-		getline(myFile,line);   // Read a line
-		istringstream iss(line);
-		iss >> dataset->nOfInputs;
-		iss >> dataset->nOfOutputs;
-		iss >> dataset->nOfPatterns;
-	}
-	dataset->inputs = new double*[dataset->nOfPatterns];
-	dataset->outputs = new double*[dataset->nOfPatterns];
-
-	for(i=0; i<dataset->nOfPatterns; i++){
-		dataset->inputs[i] = new double[dataset->nOfInputs];
-		dataset->outputs[i] = new double[dataset->nOfOutputs];
-	}
-
-	i=0;
-	while ( myFile.good()) {
-		getline(myFile,line);   // Read a line
-		if (! line.empty()) {
-			istringstream iss(line);
-			for(j=0; j< dataset->nOfInputs; j++){
-				double value;
-				iss >> value;
-				if(!iss)
-					return NULL;
-				dataset->inputs[i][j] = value;
-			}
-			for(j=0; j< dataset->nOfOutputs; j++){
-				double value;
-				iss >> value;
-				if(!iss)
-					return NULL;
-				dataset->outputs[i][j] = value;
-			}
-			i++;
-		}
-	}
-
-	myFile.close();
-
-	return dataset;
-}
 
 
 // Optional Kaggle: Load the model weights from a textfile
